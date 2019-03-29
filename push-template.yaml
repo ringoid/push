@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Push Service Stack
+
+
+Mappings:
+
+  LogMap:
+    PapertrailLog:
+      stage: "logs7.papertrailapp.com:23213"
+      test: "logs7.papertrailapp.com:16637"
+      prod: "logs7.papertrailapp.com:16747"
+
+  FunctionName:
+    UpdateTokenPushFunction:
+      test: test-update-token-push
+      stage: stage-update-token-push
+      prod: prod-update-token-push
+    UpdateTokenPushTargetGroup:
+      test: test-update-token-push-tg
+      stage: stage-update-token-push-tg
+      prod: prod-update-token-push-tg
+    TestPublishPushFunction:
+      test: test-push
+      stage: stage-push
+      prod: prod-push
+
+  TableName:
+    TokenTable:
+      test: test-Push-TokenTable
+      stage: stage-Push-TokenTable
+      prod: prod-Push-TokenTable
+
+  PlatformApplicationArn:
+    ios:
+      test: na
+      stage: "arn:aws:sns:eu-west-1:410568660038:app/APNS/stage_ios_Ringoid"
+      prod: "arn:aws:sns:eu-west-1:410568660038:app/APNS/prod_ios_Ringoid"
+    android:
+      test: na
+      stage: "arn:aws:sns:eu-west-1:410568660038:app/GCM/stage_android_Ringoid"
+      prod: "arn:aws:sns:eu-west-1:410568660038:app/GCM/prod_android_Ringoid"
+
+Parameters:
+  Env:
+    Type: String
+    Default: stage
+    AllowedValues:
+      - test
+      - stage
+      - prod
+    Description: Env name
+
+Globals:
+    Function:
+        Timeout: 300
+        MemorySize: 512
+        Runtime: go1.x
+        Environment:
+          Variables:
+            ENV: !Ref Env
+            PAPERTRAIL_LOG_ADDRESS: !FindInMap [LogMap, PapertrailLog, !Ref Env]
+            DELIVERY_STREAM:
+              Fn::ImportValue:
+                !Join [ "-", [ !Ref Env, DeliveryStreamExportName] ]
+            TOKEN_TABLE_NAME: !FindInMap [TableName, TokenTable, !Ref Env]
+            INTERNAL_AUTH_FUNCTION_NAME:
+              Fn::ImportValue:
+                !Join [ "-", [ !Ref Env, InternalGetUserIdFunctionExport] ]
+            PLATFORM_APPLICATION_ARN_IOS: !FindInMap [PlatformApplicationArn, ios, !Ref Env]
+            PLATFORM_APPLICATION_ARN_ANDROID: !FindInMap [PlatformApplicationArn, android, !Ref Env]
+        Tags:
+          Company: Ringoid
+          Service: push
+          Environment: !Ref Env
+
+Resources:
+
+  TestPublishPushFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !FindInMap [FunctionName, TestPublishPushFunction, !Ref Env]
+      Handler: publish
+      CodeUri: ./publish.zip
+      Description: Test publish function
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AmazonKinesisFirehoseFullAccess
+        - AmazonSNSFullAccess
+        - AWSLambdaFullAccess
+
+  UpdateTokenPushFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !FindInMap [FunctionName, UpdateTokenPushFunction, !Ref Env]
+      Handler: update
+      CodeUri: ./update.zip
+      Description: Update device token function
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AmazonKinesisFirehoseFullAccess
+        - AmazonSNSFullAccess
+        - AWSLambdaFullAccess
+
+  UpdateTokenPushTargetGroup:
+    Type: Custom::CreateTargetGroup
+    Properties:
+      ServiceToken:
+        Fn::ImportValue:
+          !Join [ "-", [ !Ref Env, CustomResourceFunctionExport] ]
+      CustomName: !FindInMap [FunctionName, UpdateTokenPushTargetGroup, !Ref Env]
+      CustomTargetsId: !GetAtt UpdateTokenPushFunction.Arn
+      TargetLambdaFunctionName: !Ref UpdateTokenPushFunction
+
+  UpdateTokenPushListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !GetAtt UpdateTokenPushTargetGroup.TargetGroupArn
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/push/update_token"
+      ListenerArn:
+        Fn::ImportValue:
+          !Join [ "-", [ !Ref Env, ListenerArnExport] ]
+      Priority: 501
+
+  TokenTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !FindInMap [TableName, TokenTable, !Ref Env]
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        -
+          AttributeName: device_token
+          AttributeType: S
+        -
+          AttributeName: os
+          AttributeType: S
+        -
+          AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        -
+          AttributeName: device_token
+          KeyType: HASH
+        -
+          AttributeName: os
+          KeyType: RANGE
+
+      GlobalSecondaryIndexes:
+        -
+          IndexName: userIdGSI
+          KeySchema:
+            -
+              AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Company
+          Value: Ringoid
+        - Key: Service
+          Value: push
+        - Key: Environment
+          Value: !Ref Env
