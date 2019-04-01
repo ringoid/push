@@ -7,12 +7,20 @@ build:
 	GOOS=linux go build update-token/update.go
 	@echo '--- Building test-publish function ---'
 	GOOS=linux go build test-publish/publish.go
+	@echo '--- Building scheduler-publish function ---'
+	GOOS=linux go build push-scheduler/scheduler.go
+	@echo '--- Building internal-handle-task function ---'
+	GOOS=linux go build lambda-handle-task/internal_handle_task.go
 
 zip_lambda: build
 	@echo '--- Zip update-token function ---'
 	zip update.zip ./update
 	@echo '--- Zip test-publish function ---'
 	zip publish.zip ./publish
+	@echo '--- Zip scheduler-publish function ---'
+	zip scheduler.zip ./scheduler
+	@echo '--- Zip internal-handle-task function ---'
+	zip internal_handle_task.zip ./internal_handle_task
 
 test-deploy: zip_lambda
 	@echo '--- Build lambda test ---'
@@ -42,4 +50,8 @@ clean:
 	rm -rf push-template-packaged.yaml
 	rm -rf publish
 	rm -rf publish.zip
+	rm -rf scheduler
+	rm -rf scheduler.zip
+	rm -rf internal_handle_task
+	rm -rf internal_handle_task.zip
 

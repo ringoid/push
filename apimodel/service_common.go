@@ -11,19 +11,27 @@ import (
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/firehose"
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go/service/kinesis"
 )
 
 var Anlogger *commons.Logger
 var AwsDynamoDbClient *dynamodb.DynamoDB
 var AwsLambdaClient *lambda.Lambda
 var AwsSnsClient *sns.SNS
+var AwsSQSClient *sqs.SQS
 var AwsDeliveryStreamClient *firehose.Firehose
+var AwsKinesisStreamClient *kinesis.Kinesis
 
 var TokenTableName string
 var InternalAuthFunctionName string
 var DeliveryStreamName string
 var PlatformApplicationArnIos string
 var PlatformApplicationArnAndroid string
+var ReadyForPushFunctionName string
+var PushTaskQueue string
+var AlreadySentPushTableName string
+var CommonStreamName string
 
 func InitLambdaVars(lambdaName string) {
 	var env string
@@ -59,11 +67,23 @@ func InitLambdaVars(lambdaName string) {
 	}
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with TOKEN_TABLE_NAME = [%s]", TokenTableName)
 
+	AlreadySentPushTableName, ok = os.LookupEnv("ALREADY_SENT_PUSH_TABLE_NAME")
+	if !ok {
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty ALREADY_SENT_PUSH_TABLE_NAME")
+	}
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with ALREADY_SENT_PUSH_TABLE_NAME = [%s]", AlreadySentPushTableName)
+
 	InternalAuthFunctionName, ok = os.LookupEnv("INTERNAL_AUTH_FUNCTION_NAME")
 	if !ok {
 		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty INTERNAL_AUTH_FUNCTION_NAME")
 	}
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with INTERNAL_AUTH_FUNCTION_NAME = [%s]", InternalAuthFunctionName)
+
+	ReadyForPushFunctionName, ok = os.LookupEnv("READY_FOR_PUSH_FUNCTION_NAME")
+	if !ok {
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty READY_FOR_PUSH_FUNCTION_NAME")
+	}
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with READY_FOR_PUSH_FUNCTION_NAME = [%s]", ReadyForPushFunctionName)
 
 	DeliveryStreamName, ok = os.LookupEnv("DELIVERY_STREAM")
 	if !ok {
@@ -82,6 +102,18 @@ func InitLambdaVars(lambdaName string) {
 		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty PLATFORM_APPLICATION_ARN_ANDROID")
 	}
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with PLATFORM_APPLICATION_ARN_ANDROID = [%s]", PlatformApplicationArnAndroid)
+
+	PushTaskQueue, ok = os.LookupEnv("PUSH_TASK_QUEUE")
+	if !ok {
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty PUSH_TASK_QUEUE")
+	}
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with PUSH_TASK_QUEUE = [%s]", PushTaskQueue)
+
+	CommonStreamName, ok = os.LookupEnv("COMMON_STREAM")
+	if !ok {
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty COMMON_STREAM")
+	}
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with COMMON_STREAM = [%s]", CommonStreamName)
 
 	awsSession, err = session.NewSession(aws.NewConfig().
 		WithRegion(commons.Region).WithMaxRetries(commons.MaxRetries).
@@ -102,12 +134,18 @@ func InitLambdaVars(lambdaName string) {
 
 	AwsDeliveryStreamClient = firehose.New(awsSession)
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : firehose client was successfully initialized")
+
+	AwsSQSClient = sqs.New(awsSession)
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : sqs client was successfully initialized")
+
+	AwsKinesisStreamClient = kinesis.New(awsSession)
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : kinesis client was successfully initialized")
 }
 
 //return ok and error string
-func PublishMessage(messageBody, userId string, lc *lambdacontext.LambdaContext) (bool, string) {
+func PublishMessage(messageBody, title, userId string, lc *lambdacontext.LambdaContext) (bool, string) {
 	Anlogger.Debugf(lc, "service_common.go : publish message [%s] to userId [%s]", messageBody, userId)
-	endpointArn, ok, errStr := GetPlatformEndpointArn(userId, lc)
+	endpointArn, os, ok, errStr := GetPlatformEndpointArnAndOs(userId, lc)
 	if !ok {
 		return false, errStr
 	}
@@ -115,31 +153,27 @@ func PublishMessage(messageBody, userId string, lc *lambdacontext.LambdaContext)
 		Anlogger.Debugf(lc, "service_common.go : didn't send message to userId [%s], there is no endpoint arn", userId)
 		return true, ""
 	}
-
-	//msg := `{"GCM":"{\"notification\":{\"title\":\"Ringoid title\",\"body\":\"Random text\"}}"}`
-	msg := `{"APNS":"{\"aps\":{\"alert\":\"Random text\"}}"}`
+	msg := `{"GCM":"{\"notification\":{\"title\":\"` + title + `\",\"body\":\"` + messageBody + `\"}}"}`
+	if os == commons.IOSOperationalSystemName {
+		msg = `{"APNS":"{\"aps\":{\"alert\":\"` + messageBody + `\"}}"}`
+	}
 	input := &sns.PublishInput{
 		Message: aws.String(msg),
 
 		MessageStructure: aws.String("json"),
 		TargetArn:        aws.String(endpointArn),
 	}
-	//input := &sns.PublishInput{
-	//	Subject:aws.String("Subject"),
-	//	Message:   aws.String(messageBody),
-	//	TargetArn: aws.String(endpointArn),
-	//}
 	_, err := AwsSnsClient.Publish(input)
 	if err != nil {
-		Anlogger.Errorf(lc, "service_common.go : error publish message for userId [%s] : %v", userId, err)
+		Anlogger.Errorf(lc, "service_common.go : error publish message [%s] for userId [%s] : %v", msg, userId, err)
 		return false, commons.InternalServerError
 	}
-	Anlogger.Debugf(lc, "service_common.go : successfully publish message [%s] to userId [%s]", messageBody, userId)
+	Anlogger.Debugf(lc, "service_common.go : successfully publish message [%s] to userId [%s]", msg, userId)
 	return true, ""
 }
 
-//return platform arn, ok and error string
-func GetPlatformEndpointArn(userId string, lc *lambdacontext.LambdaContext) (string, bool, string) {
+//return platform arn, os, ok and error string
+func GetPlatformEndpointArnAndOs(userId string, lc *lambdacontext.LambdaContext) (string, string, bool, string) {
 	Anlogger.Debugf(lc, "service_common.go : get platform endpoint arn for userId [%s]", userId)
 	input := &dynamodb.QueryInput{
 		ExpressionAttributeNames: map[string]*string{
@@ -158,21 +192,22 @@ func GetPlatformEndpointArn(userId string, lc *lambdacontext.LambdaContext) (str
 	result, err := AwsDynamoDbClient.Query(input)
 	if err != nil {
 		Anlogger.Errorf(lc, "service_common.go : error query userIdGSI index for userId [%s] : %v", userId, err)
-		return "", false, commons.InternalServerError
+		return "", "", false, commons.InternalServerError
 	}
 
 	if len(result.Items) == 0 {
 		Anlogger.Debugf(lc, "service_common.go : there is no platform endpoint for userId [%s]", userId)
-		return "", true, ""
+		return "", "", true, ""
 	}
 
 	if len(result.Items) > 1 {
 		Anlogger.Errorf(lc, "service_common.go : more than 1 endpoint arn for userId [%s], size [%d]", userId, len(result.Items))
-		return "", false, commons.InternalServerError
+		return "", "", false, commons.InternalServerError
 	}
 
 	endpointArn := *result.Items[0][commons.PlatformEndpointArnColumnName].S
-	Anlogger.Debugf(lc, "service_common.go : successfully get platform endpoint arn [%s] for userId [%s]", endpointArn, userId)
+	os := *result.Items[0][commons.OSColumnName].S
+	Anlogger.Debugf(lc, "service_common.go : successfully get platform endpoint arn [%s] and os [%s] for userId [%s]", endpointArn, os, userId)
 
-	return endpointArn, true, ""
+	return endpointArn, os, true, ""
 }

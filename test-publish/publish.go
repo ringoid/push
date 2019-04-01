@@ -18,7 +18,7 @@ type PublishRequest struct {
 
 func handler(ctx context.Context, request PublishRequest) (string, error) {
 	lc, _ := lambdacontext.FromContext(ctx)
-	ok, errStr := apimodel.PublishMessage(request.Message, request.UserId, lc)
+	ok, errStr := apimodel.PublishMessage(request.Message, "title", request.UserId, lc)
 	if !ok {
 		return errStr, nil
 	}

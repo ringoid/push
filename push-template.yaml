@@ -24,20 +24,42 @@ Mappings:
       test: test-push
       stage: stage-push
       prod: prod-push
+    SchedulerPushFunction:
+      test: test-scheduler-push
+      stage: stage-scheduler-push
+      prod: prod-scheduler-push
+    InternalHandleAsyncTaskFunction:
+      test: test-internal-handler-async-task-push
+      stage: stage-internal-handler-async-task-push
+      prod: prod-internal-handler-async-task-push
 
   TableName:
     TokenTable:
       test: test-Push-TokenTable
       stage: stage-Push-TokenTable
       prod: prod-Push-TokenTable
+    AlreadySentPush:
+      test: test-Push-AlreadySentPush
+      stage: stage-Push-AlreadySentPush
+      prod: prod-Push-AlreadySentPush
+
+  SQSName:
+    PushTaskSqsQueue:
+      test: test-push-task-queue-push
+      stage: stage-push-task-queue-push
+      prod: prod-push-task-queue-push
+    PushTaskSqsDeadQueue:
+      test: test-push-task-dead-queue-push
+      stage: stage-push-task-dead-queue-push
+      prod: prod-push-task-dead-queue-push
 
   PlatformApplicationArn:
     ios:
-      test: na
+      test: "arn:aws:sns:eu-west-1:410568660038:app/APNS/stage_ios_Ringoid"
       stage: "arn:aws:sns:eu-west-1:410568660038:app/APNS/stage_ios_Ringoid"
       prod: "arn:aws:sns:eu-west-1:410568660038:app/APNS/prod_ios_Ringoid"
     android:
-      test: na
+      test: "arn:aws:sns:eu-west-1:410568660038:app/GCM/stage_android_Ringoid"
       stage: "arn:aws:sns:eu-west-1:410568660038:app/GCM/stage_android_Ringoid"
       prod: "arn:aws:sns:eu-west-1:410568660038:app/GCM/prod_android_Ringoid"
 
@@ -60,15 +82,23 @@ Globals:
           Variables:
             ENV: !Ref Env
             PAPERTRAIL_LOG_ADDRESS: !FindInMap [LogMap, PapertrailLog, !Ref Env]
+            COMMON_STREAM:
+              Fn::ImportValue:
+                !Join [ "-", [ !Ref Env, CommonEventStreamExportName] ]
             DELIVERY_STREAM:
               Fn::ImportValue:
                 !Join [ "-", [ !Ref Env, DeliveryStreamExportName] ]
             TOKEN_TABLE_NAME: !FindInMap [TableName, TokenTable, !Ref Env]
+            ALREADY_SENT_PUSH_TABLE_NAME: !FindInMap [TableName, AlreadySentPush, !Ref Env]
             INTERNAL_AUTH_FUNCTION_NAME:
               Fn::ImportValue:
                 !Join [ "-", [ !Ref Env, InternalGetUserIdFunctionExport] ]
             PLATFORM_APPLICATION_ARN_IOS: !FindInMap [PlatformApplicationArn, ios, !Ref Env]
             PLATFORM_APPLICATION_ARN_ANDROID: !FindInMap [PlatformApplicationArn, android, !Ref Env]
+            READY_FOR_PUSH_FUNCTION_NAME:
+              Fn::ImportValue:
+                !Join [ "-", [ !Ref Env, RedyForPushFunctionExport] ]
+            PUSH_TASK_QUEUE: !Ref PushTaskSqsQueue
         Tags:
           Company: Ringoid
           Service: push
@@ -88,6 +118,20 @@ Resources:
         - AmazonKinesisFirehoseFullAccess
         - AmazonSNSFullAccess
         - AWSLambdaFullAccess
+
+  SchedulerPushFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !FindInMap [FunctionName, SchedulerPushFunction, !Ref Env]
+      Handler: scheduler
+      CodeUri: ./scheduler.zip
+      Description: Scheduler push function
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AWSLambdaFullAccess
+        - AmazonSQSFullAccess
+        - AmazonKinesisFullAccess
+        - AmazonKinesisFirehoseFullAccess
 
   UpdateTokenPushFunction:
     Type: AWS::Serverless::Function
@@ -126,6 +170,69 @@ Resources:
         Fn::ImportValue:
           !Join [ "-", [ !Ref Env, ListenerArnExport] ]
       Priority: 501
+
+  InternalHandleAsyncTaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !FindInMap [FunctionName, InternalHandleAsyncTaskFunction, !Ref Env]
+      Handler: internal_handle_task
+      CodeUri: ./internal_handle_task.zip
+      Description: Handle async task (push) from the queue
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AmazonSQSFullAccess
+        - AmazonSNSFullAccess
+        - AmazonKinesisFirehoseFullAccess
+        - AmazonKinesisFullAccess
+      Events:
+        StartEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+                - PushTaskSqsQueue
+                - Arn
+            BatchSize: 10
+
+  PushTaskSqsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !FindInMap [SQSName, PushTaskSqsQueue, !Ref Env]
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+            - PushTaskSqsDeadQueue
+            - Arn
+        maxReceiveCount: 3
+
+  PushTaskSqsDeadQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !FindInMap [SQSName, PushTaskSqsDeadQueue, !Ref Env]
+
+  AlreadySentPush:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !FindInMap [TableName, AlreadySentPush, !Ref Env]
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        -
+          AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        -
+          AttributeName: user_id
+          KeyType: HASH
+      Tags:
+        - Key: Company
+          Value: Ringoid
+        - Key: Service
+          Value: push
+        - Key: Environment
+          Value: !Ref Env
 
   TokenTable:
     Type: AWS::DynamoDB::Table
