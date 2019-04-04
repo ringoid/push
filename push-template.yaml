@@ -133,6 +133,32 @@ Resources:
         - AmazonKinesisFullAccess
         - AmazonKinesisFirehoseFullAccess
 
+  ScheduledSchedulerPushFunctionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Scheduled SchedulerPushFunction rule
+      ScheduleExpression: rate(10 minutes)
+      State: ENABLED
+      Name: !Join [ "-", [ !Ref Env, schedule_push_function_rule] ]
+      Targets:
+        -
+          Arn:
+            Fn::GetAtt:
+              - SchedulerPushFunction
+              - Arn
+          Id: ScheduledSchedulerPushFunctionRuleId
+
+  PermissionForEventsToInvokeSchedulerPushFunction:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SchedulerPushFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - ScheduledSchedulerPushFunctionRule
+          - Arn
+
   UpdateTokenPushFunction:
     Type: AWS::Serverless::Function
     Properties:
