@@ -137,7 +137,7 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Description: Scheduled SchedulerPushFunction rule
-      ScheduleExpression: rate(10 minutes)
+      ScheduleExpression: rate(20 minutes)
       State: ENABLED
       Name: !Join [ "-", [ !Ref Env, schedule_push_function_rule] ]
       Targets:
