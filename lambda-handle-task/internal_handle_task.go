@@ -48,26 +48,24 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 			return errors.New(errStr)
 		}
 		if canWeSent {
+			pushWasSentEvent := commons.NewPushWasSentToUser(aTask.UserId, "base")
+			ok, errStr := commons.SendCommonEvent(pushWasSentEvent, aTask.UserId, apimodel.CommonStreamName, aTask.UserId, apimodel.AwsKinesisStreamClient, apimodel.Anlogger, lc)
+			if !ok {
+				return errors.New(errStr)
+			}
+
 			messageBody, ok := apimodel.MessageTexts[strings.ToLower(aTask.Locale)]
 			if !ok {
 				messageBody = apimodel.MessageTexts["en"]
 			}
 
-			ok, errStr := apimodel.PublishMessage(messageBody, "", aTask.UserId, lc)
+			ok, errStr = apimodel.PublishMessage(messageBody, "", aTask.UserId, lc)
 			if !ok {
 				apimodel.Anlogger.Errorf(lc, "internal_handle_task.go : error send push to userId [%s] : %s", aTask.UserId, errStr)
 				return errors.New(fmt.Sprintf("error send push to userId [%s] : %v", aTask.UserId, errStr))
 			}
 
-			pushWasSentEvent := commons.NewPushWasSentToUser(aTask.UserId, "base")
-
 			commons.SendAnalyticEvent(pushWasSentEvent, aTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
-
-			ok, errStr = commons.SendCommonEvent(pushWasSentEvent, aTask.UserId, apimodel.CommonStreamName, aTask.UserId, apimodel.AwsKinesisStreamClient, apimodel.Anlogger, lc)
-			if !ok {
-				return errors.New(errStr)
-			}
-
 		}
 	}
 
