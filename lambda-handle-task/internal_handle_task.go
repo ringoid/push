@@ -23,6 +23,7 @@ func init() {
 func handler(ctx context.Context, event events.SQSEvent) (error) {
 	lc, _ := lambdacontext.FromContext(ctx)
 	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : start handle request with [%d] records", len(event.Records))
+	var pushCounter int
 
 	for _, record := range event.Records {
 		body := record.Body
@@ -34,7 +35,6 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 		}
 		apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : handle record %v", aTask)
 
-		//todo:send push
 		canWeSent, wasRequestOk, needToRetry := false, false, false
 		var errStr string
 		for {
@@ -60,16 +60,20 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 			}
 
 			ok, errStr = apimodel.PublishMessage(messageBody, "", aTask.UserId, lc)
-			if !ok {
+			if !ok && !strings.Contains(errStr, "EndpointDisabled") {
 				apimodel.Anlogger.Errorf(lc, "internal_handle_task.go : error send push to userId [%s] : %s", aTask.UserId, errStr)
 				return errors.New(fmt.Sprintf("error send push to userId [%s] : %v", aTask.UserId, errStr))
+			} else if !ok && strings.Contains(errStr, "EndpointDisabled") {
+				apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : can not send push to userId [%s] : %s", aTask.UserId, errStr)
+			} else {
+				pushCounter++
+				commons.SendAnalyticEvent(pushWasSentEvent, aTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
 			}
 
-			commons.SendAnalyticEvent(pushWasSentEvent, aTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
 		}
 	}
 
-	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records", len(event.Records))
+	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records and send [%d] pushes", len(event.Records), pushCounter)
 	return nil
 }
 
