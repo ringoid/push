@@ -1,18 +1,30 @@
 package apimodel
 
 const (
-	GeneralPushMessageText_ru = `Для тебя что-то есть...`
-	GeneralPushMessageText_en = `You have something new...`
+	NewPeopleMessageText_ru = `Появились новые люди...`
+	NewPeopleMessageText_en = `Check out new users...`
+
+	NewLmmDataMessageText_ru = `Для тебя что-то есть...`
+	NewLmmDataMessageText_en = `You have something new...`
 )
 
-var MessageTexts map[string]string
+var NewPeopleMessageTexts map[string]string
+var NewLmmDataMessageTexts map[string]string
 
 func init() {
-	MessageTexts = make(map[string]string)
-	MessageTexts["ru"] = GeneralPushMessageText_ru
-	MessageTexts["be"] = GeneralPushMessageText_ru
-	MessageTexts["ua"] = GeneralPushMessageText_ru
+	NewPeopleMessageTexts = make(map[string]string)
+	NewPeopleMessageTexts["ru"] = NewPeopleMessageText_ru
+	NewPeopleMessageTexts["be"] = NewPeopleMessageText_ru
+	NewPeopleMessageTexts["ua"] = NewPeopleMessageText_ru
 
-	MessageTexts["en"] = GeneralPushMessageText_en
-	MessageTexts["uk"] = GeneralPushMessageText_en
+	NewPeopleMessageTexts["en"] = NewPeopleMessageText_en
+	NewPeopleMessageTexts["uk"] = NewPeopleMessageText_en
+
+	NewLmmDataMessageTexts = make(map[string]string)
+	NewLmmDataMessageTexts["ru"] = NewLmmDataMessageText_ru
+	NewLmmDataMessageTexts["be"] = NewLmmDataMessageText_ru
+	NewLmmDataMessageTexts["ua"] = NewLmmDataMessageText_ru
+
+	NewLmmDataMessageTexts["en"] = NewLmmDataMessageText_en
+	NewLmmDataMessageTexts["uk"] = NewLmmDataMessageText_en
 }

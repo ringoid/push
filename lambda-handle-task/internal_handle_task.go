@@ -54,9 +54,16 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 				return errors.New(errStr)
 			}
 
-			messageBody, ok := apimodel.MessageTexts[strings.ToLower(aTask.Locale)]
+			messageBody, ok := apimodel.NewPeopleMessageTexts[strings.ToLower(aTask.Locale)]
+			if aTask.NewLikeCounter > 0 ||
+				aTask.NewMatchCounter > 0 ||
+				aTask.NewMessageCounter > 0 {
+					
+				messageBody, ok = apimodel.NewLmmDataMessageTexts[strings.ToLower(aTask.Locale)]
+			}
+
 			if !ok {
-				messageBody = apimodel.MessageTexts["en"]
+				messageBody = apimodel.NewPeopleMessageTexts["en"]
 			}
 
 			ok, errStr = apimodel.PublishMessage(messageBody, "", aTask.UserId, lc)
