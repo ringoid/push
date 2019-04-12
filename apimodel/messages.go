@@ -1,11 +1,11 @@
 package apimodel
 
 const (
-	NewPeopleMessageText_ru = `Появились новые люди...`
-	NewPeopleMessageText_en = `Check out new users...`
+	NewPeopleMessageText_ru = `Появились новые люди`
+	NewPeopleMessageText_en = `Check out new users`
 
-	NewLmmDataMessageText_ru = `Для тебя что-то есть...`
-	NewLmmDataMessageText_en = `You have something new...`
+	NewLmmDataMessageText_ru = `Есть новый лайк, взаимная симпатия или сообщение`
+	NewLmmDataMessageText_en = `You have new like, match or message`
 )
 
 var NewPeopleMessageTexts map[string]string
