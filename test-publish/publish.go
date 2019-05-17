@@ -4,7 +4,6 @@ import (
 	"../apimodel"
 	basicLambda "github.com/aws/aws-lambda-go/lambda"
 	"context"
-	"github.com/aws/aws-lambda-go/lambdacontext"
 )
 
 func init() {
@@ -17,11 +16,11 @@ type PublishRequest struct {
 }
 
 func handler(ctx context.Context, request PublishRequest) (string, error) {
-	lc, _ := lambdacontext.FromContext(ctx)
-	ok, errStr := apimodel.PublishMessage(request.Message, "title", request.UserId, lc)
-	if !ok {
-		return errStr, nil
-	}
+	//lc, _ := lambdacontext.FromContext(ctx)
+	//ok, errStr := apimodel.PublishMessage(request.Message, "title", request.UserId, lc)
+	//if !ok {
+	//	return errStr, nil
+	//}
 	return "OK", nil
 }
 

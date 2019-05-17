@@ -20,6 +20,14 @@ Mappings:
       test: test-update-token-push-tg
       stage: stage-update-token-push-tg
       prod: prod-update-token-push-tg
+    UpdateFcmTokenPushFunction:
+      test: test-update-fcm-token-push
+      stage: stage-update-fcm-token-push
+      prod: prod-update-fcm-token-push
+    UpdateFcmTokenPushTargetGroup:
+      test: test-update-fcm-token-push-tg
+      stage: stage-update-fcm-token-push-tg
+      prod: prod-update-fcm-token-push-tg
     TestPublishPushFunction:
       test: test-push
       stage: stage-push
@@ -32,8 +40,16 @@ Mappings:
       test: test-internal-handler-async-task-push
       stage: stage-internal-handler-async-task-push
       prod: prod-internal-handler-async-task-push
+    KinesisConsumerFunction:
+      test: test-internal-handler-stream-push
+      stage: stage-internal-handler-stream-push
+      prod: prod-internal-handler-stream-push
 
   TableName:
+    FcmTokenTable:
+      test: test-Push-FCMTokenTable
+      stage: stage-Push-FCMTokenTable
+      prod: prod-Push-FCMTokenTable
     TokenTable:
       test: test-Push-TokenTable
       stage: stage-Push-TokenTable
@@ -52,16 +68,6 @@ Mappings:
       test: test-push-task-dead-queue-push
       stage: stage-push-task-dead-queue-push
       prod: prod-push-task-dead-queue-push
-
-  PlatformApplicationArn:
-    ios:
-      test: "arn:aws:sns:eu-west-1:410568660038:app/APNS/stage_ios_Ringoid"
-      stage: "arn:aws:sns:eu-west-1:410568660038:app/APNS/stage_ios_Ringoid"
-      prod: "arn:aws:sns:eu-west-1:410568660038:app/APNS/prod_ios_Ringoid"
-    android:
-      test: "arn:aws:sns:eu-west-1:410568660038:app/GCM/stage_android_Ringoid"
-      stage: "arn:aws:sns:eu-west-1:410568660038:app/GCM/stage_android_Ringoid"
-      prod: "arn:aws:sns:eu-west-1:410568660038:app/GCM/prod_android_Ringoid"
 
 Parameters:
   Env:
@@ -88,13 +94,11 @@ Globals:
             DELIVERY_STREAM:
               Fn::ImportValue:
                 !Join [ "-", [ !Ref Env, DeliveryStreamExportName] ]
-            TOKEN_TABLE_NAME: !FindInMap [TableName, TokenTable, !Ref Env]
+            FCM_TOKEN_TABLE_NAME: !FindInMap [TableName, FcmTokenTable, !Ref Env]
             ALREADY_SENT_PUSH_TABLE_NAME: !FindInMap [TableName, AlreadySentPush, !Ref Env]
             INTERNAL_AUTH_FUNCTION_NAME:
               Fn::ImportValue:
                 !Join [ "-", [ !Ref Env, InternalGetUserIdFunctionExport] ]
-            PLATFORM_APPLICATION_ARN_IOS: !FindInMap [PlatformApplicationArn, ios, !Ref Env]
-            PLATFORM_APPLICATION_ARN_ANDROID: !FindInMap [PlatformApplicationArn, android, !Ref Env]
             READY_FOR_PUSH_FUNCTION_NAME:
               Fn::ImportValue:
                 !Join [ "-", [ !Ref Env, RedyForPushFunctionExport] ]
@@ -118,6 +122,7 @@ Resources:
         - AmazonKinesisFirehoseFullAccess
         - AmazonSNSFullAccess
         - AWSLambdaFullAccess
+        - SecretsManagerReadWrite
 
   SchedulerPushFunction:
     Type: AWS::Serverless::Function
@@ -132,6 +137,7 @@ Resources:
         - AmazonSQSFullAccess
         - AmazonKinesisFullAccess
         - AmazonKinesisFirehoseFullAccess
+        - SecretsManagerReadWrite
 
   ScheduledSchedulerPushFunctionRule:
     Type: AWS::Events::Rule
@@ -159,6 +165,45 @@ Resources:
           - ScheduledSchedulerPushFunctionRule
           - Arn
 
+  UpdateFcmTokenPushFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !FindInMap [FunctionName, UpdateFcmTokenPushFunction, !Ref Env]
+      Handler: update_fcm_token
+      CodeUri: ./update_fcm_token.zip
+      Description: Update FCM device token function
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AmazonKinesisFirehoseFullAccess
+        - AmazonSNSFullAccess
+        - AWSLambdaFullAccess
+        - SecretsManagerReadWrite
+
+  UpdateFcmTokenPushTargetGroup:
+    Type: Custom::CreateTargetGroup
+    Properties:
+      ServiceToken:
+        Fn::ImportValue:
+          !Join [ "-", [ !Ref Env, CustomResourceFunctionExport] ]
+      CustomName: !FindInMap [FunctionName, UpdateFcmTokenPushTargetGroup, !Ref Env]
+      CustomTargetsId: !GetAtt UpdateFcmTokenPushFunction.Arn
+      TargetLambdaFunctionName: !Ref UpdateFcmTokenPushFunction
+
+  UpdateFcmTokenPushListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !GetAtt UpdateFcmTokenPushTargetGroup.TargetGroupArn
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/push/update_fcm_token"
+      ListenerArn:
+        Fn::ImportValue:
+          !Join [ "-", [ !Ref Env, ListenerArnExport] ]
+      Priority: 503
+
   UpdateTokenPushFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -171,6 +216,7 @@ Resources:
         - AmazonKinesisFirehoseFullAccess
         - AmazonSNSFullAccess
         - AWSLambdaFullAccess
+        - SecretsManagerReadWrite
 
   UpdateTokenPushTargetGroup:
     Type: Custom::CreateTargetGroup
@@ -210,6 +256,7 @@ Resources:
         - AmazonSNSFullAccess
         - AmazonKinesisFirehoseFullAccess
         - AmazonKinesisFullAccess
+        - SecretsManagerReadWrite
       Events:
         StartEvent:
           Type: SQS
@@ -237,6 +284,29 @@ Resources:
     Properties:
       QueueName: !FindInMap [SQSName, PushTaskSqsDeadQueue, !Ref Env]
 
+  KinesisConsumerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !FindInMap [FunctionName, KinesisConsumerFunction, !Ref Env]
+      Handler: handle_stream
+      CodeUri: ./handle_stream.zip
+      Description: Consumer for Kinesis stream
+      Policies:
+        - AmazonKinesisFullAccess
+        - AmazonDynamoDBFullAccess
+        - AmazonSQSFullAccess
+        - AmazonKinesisFirehoseFullAccess
+        - SecretsManagerReadWrite
+      Events:
+        CommonEventStreamEvent:
+          Type: Kinesis
+          Properties:
+            Stream:
+              Fn::ImportValue:
+                !Join [ "-", [ !Ref Env, InternalEventStreamExport] ]
+            StartingPosition: TRIM_HORIZON
+            BatchSize: 1
+
   AlreadySentPush:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -252,6 +322,31 @@ Resources:
         -
           AttributeName: user_id
           KeyType: HASH
+      Tags:
+        - Key: Company
+          Value: Ringoid
+        - Key: Service
+          Value: push
+        - Key: Environment
+          Value: !Ref Env
+
+  FcmTokenTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !FindInMap [TableName, FcmTokenTable, !Ref Env]
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        -
+          AttributeName: user_id
+          AttributeType: S
+
+      KeySchema:
+        -
+          AttributeName: user_id
+          KeyType: HASH
+
       Tags:
         - Key: Company
           Value: Ringoid

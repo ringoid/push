@@ -13,6 +13,11 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"firebase.google.com/go"
+	"google.golang.org/api/option"
+	"context"
+	"firebase.google.com/go/messaging"
 )
 
 var Anlogger *commons.Logger
@@ -26,12 +31,12 @@ var AwsKinesisStreamClient *kinesis.Kinesis
 var TokenTableName string
 var InternalAuthFunctionName string
 var DeliveryStreamName string
-var PlatformApplicationArnIos string
-var PlatformApplicationArnAndroid string
 var ReadyForPushFunctionName string
 var PushTaskQueue string
 var AlreadySentPushTableName string
 var CommonStreamName string
+
+var FirebaseClient *messaging.Client
 
 func InitLambdaVars(lambdaName string) {
 	var env string
@@ -61,11 +66,11 @@ func InitLambdaVars(lambdaName string) {
 	}
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : logger was successfully initialized")
 
-	TokenTableName, ok = os.LookupEnv("TOKEN_TABLE_NAME")
+	TokenTableName, ok = os.LookupEnv("FCM_TOKEN_TABLE_NAME")
 	if !ok {
-		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty TOKEN_TABLE_NAME")
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty FCM_TOKEN_TABLE_NAME")
 	}
-	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with TOKEN_TABLE_NAME = [%s]", TokenTableName)
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with FCM_TOKEN_TABLE_NAME = [%s]", TokenTableName)
 
 	AlreadySentPushTableName, ok = os.LookupEnv("ALREADY_SENT_PUSH_TABLE_NAME")
 	if !ok {
@@ -90,18 +95,6 @@ func InitLambdaVars(lambdaName string) {
 		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty DELIVERY_STREAM")
 	}
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with DELIVERY_STREAM = [%s]", DeliveryStreamName)
-
-	PlatformApplicationArnIos, ok = os.LookupEnv("PLATFORM_APPLICATION_ARN_IOS")
-	if !ok {
-		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty PLATFORM_APPLICATION_ARN_IOS")
-	}
-	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with PLATFORM_APPLICATION_ARN_IOS = [%s]", PlatformApplicationArnIos)
-
-	PlatformApplicationArnAndroid, ok = os.LookupEnv("PLATFORM_APPLICATION_ARN_ANDROID")
-	if !ok {
-		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : env can not be empty PLATFORM_APPLICATION_ARN_ANDROID")
-	}
-	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : start with PLATFORM_APPLICATION_ARN_ANDROID = [%s]", PlatformApplicationArnAndroid)
 
 	PushTaskQueue, ok = os.LookupEnv("PUSH_TASK_QUEUE")
 	if !ok {
@@ -140,74 +133,83 @@ func InitLambdaVars(lambdaName string) {
 
 	AwsKinesisStreamClient = kinesis.New(awsSession)
 	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : kinesis client was successfully initialized")
-}
 
-//return ok and error string
-func PublishMessage(messageBody, title, userId string, lc *lambdacontext.LambdaContext) (bool, string) {
-	Anlogger.Debugf(lc, "service_common.go : publish message [%s] to userId [%s]", messageBody, userId)
-	endpointArn, os, ok, errStr := GetPlatformEndpointArnAndOs(userId, lc)
-	if !ok {
-		return false, errStr
-	}
-	if endpointArn == "" {
-		Anlogger.Debugf(lc, "service_common.go : didn't send message to userId [%s], there is no endpoint arn", userId)
-		return true, ""
-	}
-	msg := `{"GCM":"{\"notification\":{\"title\":\"` + title + `\",\"body\":\"` + messageBody + `\"}}"}`
-	if os == commons.IOSOperationalSystemName {
-		msg = `{"APNS":"{\"aps\":{\"alert\":\"` + messageBody + `\"}}"}`
-	}
-	input := &sns.PublishInput{
-		Message: aws.String(msg),
-
-		MessageStructure: aws.String("json"),
-		TargetArn:        aws.String(endpointArn),
-	}
-	_, err := AwsSnsClient.Publish(input)
+	fireBaseCreds := commons.GetSecret(fmt.Sprintf("%s/Firebase/Credentials", env), "credentials", awsSession, Anlogger, nil)
+	opt := option.WithCredentialsJSON([]byte(fireBaseCreds))
+	fireBaseApp, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
-		Anlogger.Errorf(lc, "service_common.go : error publish message [%s] for userId [%s] : %v", msg, userId, err)
-		return false, commons.InternalServerError
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : error initialise firebase app : %v", err)
 	}
-	Anlogger.Debugf(lc, "service_common.go : successfully publish message [%s] to userId [%s]", msg, userId)
-	return true, ""
+	ctx := context.Background()
+	FirebaseClient, err = fireBaseApp.Messaging(ctx)
+	if err != nil {
+		Anlogger.Fatalf(nil, "lambda-initialization : service_common.go : error initialise firebase client : %v", err)
+	}
+	Anlogger.Debugf(nil, "lambda-initialization : service_common.go : firebase client was successfully initialized")
 }
 
-//return platform arn, os, ok and error string
-func GetPlatformEndpointArnAndOs(userId string, lc *lambdacontext.LambdaContext) (string, string, bool, string) {
-	Anlogger.Debugf(lc, "service_common.go : get platform endpoint arn for userId [%s]", userId)
-	input := &dynamodb.QueryInput{
+//return can we send, was request ok, need to retry, and error string
+func CanPushTypeBeSent(userId, pushType string, oldestTimeForSendingPush, period int64, lc *lambdacontext.LambdaContext) (bool, bool, bool, string) {
+	Anlogger.Debugf(lc, "service_common.go : check can we send push [%s] with oldestTimeForSendingPush [%v] and period [%v] for userId [%s]",
+		pushType, oldestTimeForSendingPush, period, userId)
+
+	if oldestTimeForSendingPush <= 0 && period <= 0 {
+		Anlogger.Errorf(lc, "service_common.go : wrong params, when sending push for userId [%s], oldestTimeForSendingPush [%s], period [%s]",
+			userId, oldestTimeForSendingPush, period)
+		return false, false, false, commons.InternalServerError
+	}
+
+	updateTime := commons.UnixTimeInMillis()
+	oldestPossibleTimeForSendingPush := oldestTimeForSendingPush
+	if oldestPossibleTimeForSendingPush <= 0 {
+		oldestPossibleTimeForSendingPush = commons.UnixTimeInMillis() - period
+	}
+
+	pushId := userId + "_" + pushType
+	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: map[string]*string{
-			"#userId": aws.String(commons.UserIdColumnName),
+			"#updateTime": aws.String(commons.UpdatedTimeColumnName),
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":userIdV": {
-				S: aws.String(userId),
+			":oldestTimeV": {
+				N: aws.String(fmt.Sprintf("%v", oldestPossibleTimeForSendingPush)),
+			},
+			":updateTimeV": {
+				N: aws.String(fmt.Sprintf("%v", updateTime)),
 			},
 		},
-
-		KeyConditionExpression: aws.String("#userId = :userIdV"),
-		TableName:              aws.String(TokenTableName),
-		IndexName:              aws.String("userIdGSI"),
+		Key: map[string]*dynamodb.AttributeValue{
+			commons.UserIdColumnName: {
+				S: aws.String(pushId),
+			},
+		},
+		//if we use lastOnline time in params than this condition means that user
+		//was online after last push with given type was sent
+		ConditionExpression: aws.String(fmt.Sprintf("attribute_not_exists(%s) OR %s < :oldestTimeV",
+			commons.UpdatedTimeColumnName, commons.UpdatedTimeColumnName)),
+		TableName:        aws.String(AlreadySentPushTableName),
+		UpdateExpression: aws.String("SET #updateTime = :updateTimeV"),
 	}
-	result, err := AwsDynamoDbClient.Query(input)
+
+	_, err := AwsDynamoDbClient.UpdateItem(input)
 	if err != nil {
-		Anlogger.Errorf(lc, "service_common.go : error query userIdGSI index for userId [%s] : %v", userId, err)
-		return "", "", false, commons.InternalServerError
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeConditionalCheckFailedException:
+				Anlogger.Debugf(lc, "service_common.go : try to send push too often for userId [%s]", userId)
+				return false, true, false, ""
+			case dynamodb.ErrCodeProvisionedThroughputExceededException:
+				Anlogger.Warnf(lc, "service_common.go : warning, when sending push for userId [%s], need to retry : %v", userId, aerr)
+				return false, false, true, ""
+			default:
+				Anlogger.Errorf(lc, "service_common.go : error, try to send push for userId [%s] : %v", userId, aerr)
+				return false, false, false, commons.InternalServerError
+			}
+		}
+		Anlogger.Errorf(lc, "service_common.go : error, try to send push for userId [%s] : %v", userId, err)
+		return false, false, false, commons.InternalServerError
 	}
 
-	if len(result.Items) == 0 {
-		Anlogger.Debugf(lc, "service_common.go : there is no platform endpoint for userId [%s]", userId)
-		return "", "", true, ""
-	}
-
-	if len(result.Items) > 1 {
-		Anlogger.Errorf(lc, "service_common.go : more than 1 endpoint arn for userId [%s], size [%d]", userId, len(result.Items))
-		return "", "", false, commons.InternalServerError
-	}
-
-	endpointArn := *result.Items[0][commons.PlatformEndpointArnColumnName].S
-	os := *result.Items[0][commons.OSColumnName].S
-	Anlogger.Debugf(lc, "service_common.go : successfully get platform endpoint arn [%s] and os [%s] for userId [%s]", endpointArn, os, userId)
-
-	return endpointArn, os, true, ""
+	Anlogger.Debugf(lc, "service_common.go : successfully check that we can send push for userId [%s]", userId)
+	return true, true, false, ""
 }

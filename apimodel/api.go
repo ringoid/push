@@ -20,7 +20,7 @@ const (
 	//MaxH                 = int64(23)
 	//
 	MaxPeriodDefault     = int64(86400000)
-	OfflinePeriodDefault = int64(14400000)
+	OfflinePeriodDefault = int64(7200000)
 	MinForMenDefault     = int64(10)
 	MinForWomenDefault   = int64(25)
 	MinH                 = int64(19)

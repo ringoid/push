@@ -96,6 +96,7 @@ func sendPushToSqs(source []commons.PushObject, lc *lambdacontext.LambdaContext)
 	apimodel.Anlogger.Debugf(lc, "scheduler.go : put [%d] push objects into sqs", len(source))
 	actualCounter := 0
 	for _, each := range source {
+		each.PushType = commons.OnceDayPushType
 		ok, _ := commons.SendAsyncTask(each, apimodel.PushTaskQueue, "admin", 0, apimodel.AwsSQSClient, apimodel.Anlogger, lc)
 		if ok {
 			actualCounter++
