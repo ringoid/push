@@ -13,7 +13,7 @@ import (
 	"errors"
 )
 
-func sendSpecialPush(push commons.PushObject, lc *lambdacontext.LambdaContext) (error) {
+func sendSpecialPush(push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	token, ok, errStr := fetchToken(push.UserId, lc)
 	if !ok {
 		return errors.New(errStr)
@@ -30,11 +30,11 @@ func sendSpecialPush(push commons.PushObject, lc *lambdacontext.LambdaContext) (
 	case commons.OnceDayPushType:
 		err = sendOnceDayPush(token, push, lc)
 	case commons.NewLikePushType:
-		err = sendNewLikePush(token, push, lc)
+		err = sendNewLikePush(token, push, isItDataPush, lc)
 	case commons.NewMatchPushType:
-		err = sendNewMatchPush(token, push, lc)
+		err = sendNewMatchPush(token, push, isItDataPush, lc)
 	case commons.NewMessagePushType:
-		err = sendNewMessagePush(token, push, lc)
+		err = sendNewMessagePush(token, push, isItDataPush, lc)
 	default:
 		err = fmt.Errorf("Unsupported push type [%s]", push.PushType)
 	}
@@ -80,22 +80,26 @@ func fetchToken(userId string, lc *lambdacontext.LambdaContext) (string, bool, s
 	return deviceToken, true, ""
 }
 
-func createMessage(token, messageBody string, push commons.PushObject) (*messaging.Message) {
+func createMessage(token, messageBody string, push commons.PushObject, isItDataPush bool) (*messaging.Message) {
 	msg := &messaging.Message{
-		Notification: &messaging.Notification{
-			Body: messageBody,
-		},
 		Data: map[string]string{
 			"type": push.PushType,
 		},
-		Android: &messaging.AndroidConfig{
+		Token: token,
+	}
+
+	if !isItDataPush {
+		msg.Notification = &messaging.Notification{
+			Body: messageBody,
+		}
+		msg.Android = &messaging.AndroidConfig{
 			CollapseKey: "new_like_message_collapse_key",
 			Notification: &messaging.AndroidNotification{
 				Sound: "default",
 				Tag:   "new_like_message",
 			},
-		},
-		APNS: &messaging.APNSConfig{
+		}
+		msg.APNS = &messaging.APNSConfig{
 			Headers: map[string]string{"apns-collapse-id": "new_like_message_collapse_key"},
 			Payload: &messaging.APNSPayload{
 				Aps: &messaging.Aps{
@@ -104,8 +108,7 @@ func createMessage(token, messageBody string, push commons.PushObject) (*messagi
 					ThreadID: "new_like_message_thread_id",
 				},
 			},
-		},
-		Token: token,
+		}
 	}
 	return msg
 }
@@ -150,35 +153,35 @@ func sendOnceDayPush(token string, push commons.PushObject, lc *lambdacontext.La
 	return sendPush(msg, lc)
 }
 
-func sendNewLikePush(token string, push commons.PushObject, lc *lambdacontext.LambdaContext) (error) {
+func sendNewLikePush(token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewLikeMessageTexts[strings.ToLower(push.Locale)]
 	if !ok {
 		messageBody = apimodel.NewLikeMessageTexts["en"]
 	}
 
-	msg := createMessage(token, messageBody, push)
+	msg := createMessage(token, messageBody, push, isItDataPush)
 
 	return sendPush(msg, lc)
 }
 
-func sendNewMatchPush(token string, push commons.PushObject, lc *lambdacontext.LambdaContext) (error) {
+func sendNewMatchPush(token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewMatchMessageTexts[strings.ToLower(push.Locale)]
 	if !ok {
 		messageBody = apimodel.NewMatchMessageTexts["en"]
 	}
 
-	msg := createMessage(token, messageBody, push)
+	msg := createMessage(token, messageBody, push, isItDataPush)
 
 	return sendPush(msg, lc)
 }
 
-func sendNewMessagePush(token string, push commons.PushObject, lc *lambdacontext.LambdaContext) (error) {
+func sendNewMessagePush(token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewMessageMessageTexts[strings.ToLower(push.Locale)]
 	if !ok {
 		messageBody = apimodel.NewMessageMessageTexts["en"]
 	}
 
-	msg := createMessage(token, messageBody, push)
+	msg := createMessage(token, messageBody, push, isItDataPush)
 
 	return sendPush(msg, lc)
 }

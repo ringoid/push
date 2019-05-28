@@ -20,7 +20,7 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 	lc, _ := lambdacontext.FromContext(ctx)
 	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : start handle request with [%d] records", len(event.Records))
 	var pushCounter int
-
+	var dataPushCounter int
 	for _, record := range event.Records {
 		body := record.Body
 		var aTask commons.PushObject
@@ -50,8 +50,10 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 			}
 			return errors.New(errStr)
 		}
+		var pushWasSentEvent *commons.PushWasSentToUser
 		if canWeSent {
-			pushWasSentEvent := commons.NewPushWasSentToUser(aTask.UserId, aTask.PushType)
+			//send notification push with optional data part
+			pushWasSentEvent = commons.NewPushWasSentToUser(aTask.UserId, aTask.PushType)
 			if aTask.PushType == commons.OnceDayPushType {
 				ok, errStr := commons.SendCommonEvent(pushWasSentEvent, aTask.UserId, apimodel.CommonStreamName, aTask.UserId, apimodel.AwsKinesisStreamClient, apimodel.Anlogger, lc)
 				if !ok {
@@ -59,16 +61,26 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 				}
 			}
 
-			err = sendSpecialPush(aTask, lc)
+			err = sendSpecialPush(aTask, false, lc)
 			if err != nil {
 				return err
 			}
 			pushCounter++
-			commons.SendAnalyticEvent(pushWasSentEvent, aTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
+		} else {
+			//send data push in this case
+			pushWasSentEvent = commons.NewDataPushWasSentToUser(aTask.UserId, aTask.PushType)
+			err = sendSpecialPush(aTask, true, lc)
+			if err != nil {
+				return err
+			}
+			dataPushCounter++
 		}
+
+		commons.SendAnalyticEvent(pushWasSentEvent, aTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
 	}
 
-	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records and send [%d] pushes", len(event.Records), pushCounter)
+	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records and send [%d] pushes and [%d] data pushes",
+		len(event.Records), pushCounter, dataPushCounter)
 	return nil
 }
 
