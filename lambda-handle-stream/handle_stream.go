@@ -79,12 +79,16 @@ func sendLikeNotification(body []byte, lc *lambdacontext.LambdaContext) (error) 
 		return err
 	}
 	push := commons.PushObject{
-		UserId:         event.UserId,
-		Sex:            event.Sex,
-		Locale:         event.Locale,
-		LastOnlineTime: event.LastOnlineTime,
-		NewLikeCounter: 1,
-		PushType:       commons.NewLikePushType,
+		UserId:            event.UserId,
+		Sex:               event.Sex,
+		Locale:            event.Locale,
+		LastOnlineTime:    event.LastOnlineTime,
+		NewLikeCounter:    1,
+		NewLikeEnabled:    event.NewLikeEnabled,
+		NewMatchEnabled:   event.NewMatchEnabled,
+		NewMessageEnabled: event.NewMessageEnabled,
+		OppositeUserId:    event.OppositeUserId,
+		PushType:          commons.NewLikePushType,
 	}
 	err = sendPushToSqs(push, lc)
 	return err
@@ -101,6 +105,10 @@ func sendMatchNotification(body []byte, lc *lambdacontext.LambdaContext) (error)
 		Locale:          event.Locale,
 		LastOnlineTime:  event.LastOnlineTime,
 		NewMatchCounter: 1,
+		NewLikeEnabled:    event.NewLikeEnabled,
+		NewMatchEnabled:   event.NewMatchEnabled,
+		NewMessageEnabled: event.NewMessageEnabled,
+		OppositeUserId:    event.OppositeUserId,
 		PushType:        commons.NewMatchPushType,
 	}
 	err = sendPushToSqs(push, lc)
@@ -118,6 +126,10 @@ func sendMessageNotification(body []byte, lc *lambdacontext.LambdaContext) (erro
 		Locale:            event.Locale,
 		LastOnlineTime:    event.LastOnlineTime,
 		NewMessageCounter: 1,
+		NewLikeEnabled:    event.NewLikeEnabled,
+		NewMatchEnabled:   event.NewMatchEnabled,
+		NewMessageEnabled: event.NewMessageEnabled,
+		OppositeUserId:    event.OppositeUserId,
 		PushType:          commons.NewMessagePushType,
 	}
 	err = sendPushToSqs(push, lc)

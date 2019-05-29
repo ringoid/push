@@ -149,13 +149,39 @@ func InitLambdaVars(lambdaName string) {
 }
 
 //return can we send, was request ok, need to retry, and error string
-func CanPushTypeBeSent(userId, pushType string, oldestTimeForSendingPush, period int64, lc *lambdacontext.LambdaContext) (bool, bool, bool, string) {
+func CanPushTypeBeSent(push commons.PushObject, oldestTimeForSendingPush, period int64, lc *lambdacontext.LambdaContext) (bool, bool, bool, string) {
 	Anlogger.Debugf(lc, "service_common.go : check can we send push [%s] with oldestTimeForSendingPush [%v] and period [%v] for userId [%s]",
-		pushType, oldestTimeForSendingPush, period, userId)
+		push, oldestTimeForSendingPush, period, push.UserId)
+
+	switch push.PushType {
+	case commons.OnceDayPushType:
+		Anlogger.Debugf(lc, "service_common.go : it's [%s] push for userId [%s]", push.PushType, push.UserId)
+	case commons.NewLikePushType:
+		if !push.NewLikeEnabled {
+			Anlogger.Debugf(lc, "service_common.go : it's [%s] push, but new like push settings disabled, skip this push for userId [%s]",
+				push.PushType, push.UserId)
+			return false, true, false, ""
+		}
+	case commons.NewMatchPushType:
+		if !push.NewMatchEnabled {
+			Anlogger.Debugf(lc, "service_common.go : it's [%s] push, but new match push settings disabled, skip this push for userId [%s]",
+				push.PushType, push.UserId)
+			return false, true, false, ""
+		}
+	case commons.NewMessagePushType:
+		if !push.NewMessageEnabled {
+			Anlogger.Debugf(lc, "service_common.go : it's [%s] push, but new message push settings disabled, skip this push for userId [%s]",
+				push.PushType, push.UserId)
+			return false, true, false, ""
+		}
+	default:
+		Anlogger.Errorf(lc, "service_common.go : Unsupported push type [%s] for userId [%s]", push.PushType, push.UserId)
+		return false, false, false, commons.InternalServerError
+	}
 
 	if oldestTimeForSendingPush <= 0 && period <= 0 {
 		Anlogger.Errorf(lc, "service_common.go : wrong params, when sending push for userId [%s], oldestTimeForSendingPush [%s], period [%s]",
-			userId, oldestTimeForSendingPush, period)
+			push.UserId, oldestTimeForSendingPush, period)
 		return false, false, false, commons.InternalServerError
 	}
 
@@ -165,7 +191,7 @@ func CanPushTypeBeSent(userId, pushType string, oldestTimeForSendingPush, period
 		oldestPossibleTimeForSendingPush = commons.UnixTimeInMillis() - period
 	}
 
-	pushId := userId + "_" + pushType
+	pushId := push.UserId + "_" + push.PushType
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeNames: map[string]*string{
 			"#updateTime": aws.String(commons.UpdatedTimeColumnName),
@@ -196,20 +222,20 @@ func CanPushTypeBeSent(userId, pushType string, oldestTimeForSendingPush, period
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
 			case dynamodb.ErrCodeConditionalCheckFailedException:
-				Anlogger.Debugf(lc, "service_common.go : try to send push too often for userId [%s]", userId)
+				Anlogger.Debugf(lc, "service_common.go : try to send push too often for userId [%s]", push.UserId)
 				return false, true, false, ""
 			case dynamodb.ErrCodeProvisionedThroughputExceededException:
-				Anlogger.Warnf(lc, "service_common.go : warning, when sending push for userId [%s], need to retry : %v", userId, aerr)
+				Anlogger.Warnf(lc, "service_common.go : warning, when sending push for userId [%s], need to retry : %v", push.UserId, aerr)
 				return false, false, true, ""
 			default:
-				Anlogger.Errorf(lc, "service_common.go : error, try to send push for userId [%s] : %v", userId, aerr)
+				Anlogger.Errorf(lc, "service_common.go : error, try to send push for userId [%s] : %v", push.UserId, aerr)
 				return false, false, false, commons.InternalServerError
 			}
 		}
-		Anlogger.Errorf(lc, "service_common.go : error, try to send push for userId [%s] : %v", userId, err)
+		Anlogger.Errorf(lc, "service_common.go : error, try to send push for userId [%s] : %v", push.UserId, err)
 		return false, false, false, commons.InternalServerError
 	}
 
-	Anlogger.Debugf(lc, "service_common.go : successfully check that we can send push for userId [%s]", userId)
+	Anlogger.Debugf(lc, "service_common.go : successfully check that we can send push for userId [%s]", push.UserId)
 	return true, true, false, ""
 }

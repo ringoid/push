@@ -28,13 +28,13 @@ func sendSpecialPush(push commons.PushObject, isItDataPush bool, lc *lambdaconte
 	var err error
 	switch push.PushType {
 	case commons.OnceDayPushType:
-		err = sendOnceDayPush(token, push, lc)
+		err = sendOnceDayPush(push.UserId, token, push, lc)
 	case commons.NewLikePushType:
-		err = sendNewLikePush(token, push, isItDataPush, lc)
+		err = sendNewLikePush(push.UserId, token, push, isItDataPush, lc)
 	case commons.NewMatchPushType:
-		err = sendNewMatchPush(token, push, isItDataPush, lc)
+		err = sendNewMatchPush(push.UserId, token, push, isItDataPush, lc)
 	case commons.NewMessagePushType:
-		err = sendNewMessagePush(token, push, isItDataPush, lc)
+		err = sendNewMessagePush(push.UserId, token, push, isItDataPush, lc)
 	default:
 		err = fmt.Errorf("Unsupported push type [%s]", push.PushType)
 	}
@@ -83,7 +83,8 @@ func fetchToken(userId string, lc *lambdacontext.LambdaContext) (string, bool, s
 func createMessage(token, messageBody string, push commons.PushObject, isItDataPush bool) (*messaging.Message) {
 	msg := &messaging.Message{
 		Data: map[string]string{
-			"type": push.PushType,
+			"type":           push.PushType,
+			"oppositeUserId": push.OppositeUserId,
 		},
 		Token: token,
 	}
@@ -113,7 +114,7 @@ func createMessage(token, messageBody string, push commons.PushObject, isItDataP
 	return msg
 }
 
-func sendOnceDayPush(token string, push commons.PushObject, lc *lambdacontext.LambdaContext) (error) {
+func sendOnceDayPush(userId, token string, push commons.PushObject, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewPeopleMessageTexts[strings.ToLower(push.Locale)]
 	if push.NewLikeCounter > 0 ||
 		push.NewMatchCounter > 0 ||
@@ -150,10 +151,10 @@ func sendOnceDayPush(token string, push commons.PushObject, lc *lambdacontext.La
 		Token: token,
 	}
 
-	return sendPush(msg, lc)
+	return sendPush(userId, msg, lc)
 }
 
-func sendNewLikePush(token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
+func sendNewLikePush(userId, token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewLikeMessageTexts[strings.ToLower(push.Locale)]
 	if !ok {
 		messageBody = apimodel.NewLikeMessageTexts["en"]
@@ -161,10 +162,10 @@ func sendNewLikePush(token string, push commons.PushObject, isItDataPush bool, l
 
 	msg := createMessage(token, messageBody, push, isItDataPush)
 
-	return sendPush(msg, lc)
+	return sendPush(userId, msg, lc)
 }
 
-func sendNewMatchPush(token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
+func sendNewMatchPush(userId, token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewMatchMessageTexts[strings.ToLower(push.Locale)]
 	if !ok {
 		messageBody = apimodel.NewMatchMessageTexts["en"]
@@ -172,10 +173,10 @@ func sendNewMatchPush(token string, push commons.PushObject, isItDataPush bool, 
 
 	msg := createMessage(token, messageBody, push, isItDataPush)
 
-	return sendPush(msg, lc)
+	return sendPush(userId, msg, lc)
 }
 
-func sendNewMessagePush(token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
+func sendNewMessagePush(userId, token string, push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
 	messageBody, ok := apimodel.NewMessageMessageTexts[strings.ToLower(push.Locale)]
 	if !ok {
 		messageBody = apimodel.NewMessageMessageTexts["en"]
@@ -183,11 +184,15 @@ func sendNewMessagePush(token string, push commons.PushObject, isItDataPush bool
 
 	msg := createMessage(token, messageBody, push, isItDataPush)
 
-	return sendPush(msg, lc)
+	return sendPush(userId, msg, lc)
 }
 
-func sendPush(msg *messaging.Message, lc *lambdacontext.LambdaContext) (error) {
+func sendPush(userId string, msg *messaging.Message, lc *lambdacontext.LambdaContext) (error) {
 	ctx := context.Background()
 	_, err := apimodel.FirebaseClient.Send(ctx, msg)
+	if err == nil {
+		apimodel.Anlogger.Debugf(lc, "special_push.go : push [%v] for userId [%s] was successfully sent",
+			msg, userId)
+	}
 	return err
 }

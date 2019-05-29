@@ -23,17 +23,17 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 	var dataPushCounter int
 	for _, record := range event.Records {
 		body := record.Body
-		var aTask commons.PushObject
-		err := json.Unmarshal([]byte(body), &aTask)
+		var pushTask commons.PushObject
+		err := json.Unmarshal([]byte(body), &pushTask)
 		if err != nil {
 			apimodel.Anlogger.Errorf(lc, "internal_handle_task.go : error unmarshal body [%s] to commons.PushObject : %v", body, err)
 			return errors.New(fmt.Sprintf("error unmarshal body %s : %v", body, err))
 		}
-		apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : handle record %v", aTask)
+		apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : handle record %v", pushTask)
 
-		onlineTime := aTask.LastOnlineTime
+		onlineTime := pushTask.LastOnlineTime
 		period := int64(-1)
-		if aTask.PushType == commons.OnceDayPushType {
+		if pushTask.PushType == commons.OnceDayPushType {
 			onlineTime = int64(-1)
 			period = apimodel.MaxPeriodDefault
 		}
@@ -41,7 +41,7 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 		canWeSent, wasRequestOk, needToRetry := false, false, false
 		var errStr string
 		for {
-			canWeSent, wasRequestOk, needToRetry, errStr = apimodel.CanPushTypeBeSent(aTask.UserId, aTask.PushType, onlineTime, period, lc)
+			canWeSent, wasRequestOk, needToRetry, errStr = apimodel.CanPushTypeBeSent(pushTask, onlineTime, period, lc)
 			if wasRequestOk {
 				break
 			}
@@ -53,30 +53,30 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 		var pushWasSentEvent *commons.PushWasSentToUser
 		if canWeSent {
 			//send notification push with optional data part
-			pushWasSentEvent = commons.NewPushWasSentToUser(aTask.UserId, aTask.PushType)
-			if aTask.PushType == commons.OnceDayPushType {
-				ok, errStr := commons.SendCommonEvent(pushWasSentEvent, aTask.UserId, apimodel.CommonStreamName, aTask.UserId, apimodel.AwsKinesisStreamClient, apimodel.Anlogger, lc)
+			pushWasSentEvent = commons.NewPushWasSentToUser(pushTask.UserId, pushTask.PushType)
+			if pushTask.PushType == commons.OnceDayPushType {
+				ok, errStr := commons.SendCommonEvent(pushWasSentEvent, pushTask.UserId, apimodel.CommonStreamName, pushTask.UserId, apimodel.AwsKinesisStreamClient, apimodel.Anlogger, lc)
 				if !ok {
 					return errors.New(errStr)
 				}
 			}
 
-			err = sendSpecialPush(aTask, false, lc)
+			err = sendSpecialPush(pushTask, false, lc)
 			if err != nil {
 				return err
 			}
 			pushCounter++
 		} else {
 			//send data push in this case
-			pushWasSentEvent = commons.NewDataPushWasSentToUser(aTask.UserId, aTask.PushType)
-			err = sendSpecialPush(aTask, true, lc)
+			pushWasSentEvent = commons.NewDataPushWasSentToUser(pushTask.UserId, pushTask.PushType)
+			err = sendSpecialPush(pushTask, true, lc)
 			if err != nil {
 				return err
 			}
 			dataPushCounter++
 		}
 
-		commons.SendAnalyticEvent(pushWasSentEvent, aTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
+		commons.SendAnalyticEvent(pushWasSentEvent, pushTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
 	}
 
 	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records and send [%d] pushes and [%d] data pushes",
