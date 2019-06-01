@@ -13,16 +13,17 @@ import (
 	"errors"
 )
 
-func sendSpecialPush(push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (error) {
+//was push sent and error
+func sendSpecialPush(push commons.PushObject, isItDataPush bool, lc *lambdacontext.LambdaContext) (bool, error) {
 	token, ok, errStr := fetchToken(push.UserId, lc)
 	if !ok {
-		return errors.New(errStr)
+		return false, errors.New(errStr)
 	}
 
 	if token == "" {
 		apimodel.Anlogger.Debugf(lc, "special_push.go : there is no token for userId [%s], skipp push [%v]",
 			push.UserId, push)
-		return nil
+		return false, nil
 	}
 
 	var err error
@@ -40,13 +41,13 @@ func sendSpecialPush(push commons.PushObject, isItDataPush bool, lc *lambdaconte
 	}
 
 	if err != nil {
-		apimodel.Anlogger.Errorf(lc, "special_push.go : error when send push [%v] : %v", push, err)
-		return err
+		apimodel.Anlogger.Errorf(lc, "special_push.go : error when send push for userId [%s], push [%v] : %v", push.UserId, push, err)
+		return false, err
 	}
 
 	apimodel.Anlogger.Debugf(lc, "special_push.go : successfully send push for userId [%s], push [%v]",
 		push.UserId, push)
-	return nil
+	return true, nil
 }
 
 //return token, ok and error string

@@ -51,6 +51,7 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 			return errors.New(errStr)
 		}
 		var pushWasSentEvent *commons.PushWasSentToUser
+		var sent bool
 		if canWeSent {
 			//send notification push with optional data part
 			pushWasSentEvent = commons.NewPushWasSentToUser(pushTask.UserId, pushTask.PushType)
@@ -61,7 +62,7 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 				}
 			}
 
-			err = sendSpecialPush(pushTask, false, lc)
+			sent, err = sendSpecialPush(pushTask, false, lc)
 			if err != nil {
 				return err
 			}
@@ -69,14 +70,16 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 		} else {
 			//send data push in this case
 			pushWasSentEvent = commons.NewDataPushWasSentToUser(pushTask.UserId, pushTask.PushType)
-			err = sendSpecialPush(pushTask, true, lc)
+			sent, err = sendSpecialPush(pushTask, true, lc)
 			if err != nil {
 				return err
 			}
 			dataPushCounter++
 		}
 
-		commons.SendAnalyticEvent(pushWasSentEvent, pushTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
+		if sent {
+			commons.SendAnalyticEvent(pushWasSentEvent, pushTask.UserId, apimodel.DeliveryStreamName, apimodel.AwsDeliveryStreamClient, apimodel.Anlogger, lc)
+		}
 	}
 
 	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records and send [%d] pushes and [%d] data pushes",
