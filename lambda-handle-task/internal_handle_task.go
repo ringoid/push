@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"errors"
 	"github.com/ringoid/commons"
+	"strings"
 )
 
 func init() {
@@ -64,17 +65,32 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 
 			sent, err = sendSpecialPush(pushTask, false, lc)
 			if err != nil {
-				return err
+				//ignore unregistered token error
+				strErr := fmt.Sprintf("%v", err)
+				if !strings.Contains(strErr, "registration-token-not-registered") {
+					return err
+				}
 			}
-			pushCounter++
+
+			if sent {
+				pushCounter++
+			}
+
 		} else {
 			//send data push in this case
 			pushWasSentEvent = commons.NewDataPushWasSentToUser(pushTask.UserId, pushTask.PushType)
 			sent, err = sendSpecialPush(pushTask, true, lc)
 			if err != nil {
-				return err
+				//ignore unregistered token error
+				strErr := fmt.Sprintf("%v", err)
+				if !strings.Contains(strErr, "registration-token-not-registered") {
+					return err
+				}
 			}
-			dataPushCounter++
+
+			if sent {
+				dataPushCounter++
+			}
 		}
 
 		if sent {
