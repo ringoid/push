@@ -64,12 +64,8 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 			}
 
 			sent, err = sendSpecialPush(pushTask, false, lc)
-			if err != nil {
-				//ignore unregistered token error
-				strErr := fmt.Sprintf("%v", err)
-				if !strings.Contains(strErr, "registration-token-not-registered") {
-					return err
-				}
+			if err != nil && needThrowError(err) {
+				return err
 			}
 
 			if sent {
@@ -80,12 +76,8 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 			//send data push in this case
 			pushWasSentEvent = commons.NewDataPushWasSentToUser(pushTask.UserId, pushTask.PushType)
 			sent, err = sendSpecialPush(pushTask, true, lc)
-			if err != nil {
-				//ignore unregistered token error
-				strErr := fmt.Sprintf("%v", err)
-				if !strings.Contains(strErr, "registration-token-not-registered") {
-					return err
-				}
+			if err != nil && needThrowError(err) {
+				return err
 			}
 
 			if sent {
@@ -101,6 +93,15 @@ func handler(ctx context.Context, event events.SQSEvent) (error) {
 	apimodel.Anlogger.Debugf(lc, "internal_handle_task.go : successfully complete handle push requests with [%d] records and send [%d] pushes and [%d] data pushes",
 		len(event.Records), pushCounter, dataPushCounter)
 	return nil
+}
+
+func needThrowError(err error) (bool) {
+	strErr := fmt.Sprintf("%v", err)
+	if strings.Contains(strErr, "registration-token-not-registered") ||
+		strings.Contains(strErr, "invalid-argument") {
+		return false
+	}
+	return true
 }
 
 func main() {
