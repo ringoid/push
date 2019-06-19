@@ -1,20 +1,20 @@
 package apimodel
 
 const (
-	NewPeopleMessageText_ru = `Появились новые люди`
-	NewPeopleMessageText_en = `Check out new users`
+	NewPeopleMessageText_ru = `Появились новые люди   ✨`
+	NewPeopleMessageText_en = `Check out new users   ✨`
 
-	NewLmmDataMessageText_ru = `Есть новый лайк, взаимная симпатия или сообщение`
-	NewLmmDataMessageText_en = `You have new like, match or message`
+	NewLmmDataMessageText_ru = `Есть новый лайк, взаимная симпатия или сообщение   💖`
+	NewLmmDataMessageText_en = `You have new like, match or message   💖`
 
-	NewLikePushMessageText_ru = `Ты кому-то нравишься!`
-	NewLikePushMessageText_en = `Someone has liked you!`
+	NewLikePushMessageText_ru = `Ты кому-то нравишься!   💓`
+	NewLikePushMessageText_en = `Someone has liked you!   💓`
 
-	NewMatchPushMessageText_ru = `Тебе ответили взаимностью!`
-	NewMatchPushMessageText_en = `Someone has liked you back (it is a match!)`
+	NewMatchPushMessageText_ru = `Тебе ответили взаимностью!   😍😍😍`
+	NewMatchPushMessageText_en = `Someone has liked you back (it is a match!)   😍😍😍`
 
-	NewMessagePushMessageText_ru = `Тебе прислали сообщение...`
-	NewMessagePushMessageText_en = `Someone has sent you a message...`
+	NewMessagePushMessageText_ru = `Тебе прислали сообщение...   💌`
+	NewMessagePushMessageText_en = `Someone has sent you a message...   💌`
 )
 
 var NewPeopleMessageTexts map[string]string
