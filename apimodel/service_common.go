@@ -236,6 +236,7 @@ func CanPushTypeBeSent(push commons.PushObject, oldestTimeForSendingPush, period
 		return false, false, false, commons.InternalServerError
 	}
 
-	Anlogger.Debugf(lc, "service_common.go : successfully check that we can send push for userId [%s]", push.UserId)
+	Anlogger.Debugf(lc, "service_common.go : successfully check that we can send push for userId [%s] with updateTime [%v] and oldestPossibleTimeForSendingPush [%v]",
+		push.UserId, updateTime, oldestPossibleTimeForSendingPush)
 	return true, true, false, ""
 }
