@@ -2,6 +2,10 @@ package apimodel
 
 import "fmt"
 
+const (
+	IsDebugLogEnabled = false
+)
+
 type UpdateTokenRequest struct {
 	AccessToken string `json:"accessToken"`
 	DeviceToken string `json:"deviceToken"`
