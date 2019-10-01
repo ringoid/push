@@ -82,12 +82,20 @@ func fetchToken(userId string, lc *lambdacontext.LambdaContext) (string, bool, s
 }
 
 func createMessage(token, messageBody string, push commons.PushObject, isItDataPush bool) (*messaging.Message) {
+	thumbnails := strings.Join(push.Thumbnails, ";")
 	msg := &messaging.Message{
 		Data: map[string]string{
 			"type":           push.PushType,
 			"oppositeUserId": push.OppositeUserId,
+			"name":           push.Name,
+			"ts":             fmt.Sprintf("%v", push.Ts),
+			"thumbnails":     thumbnails,
 		},
 		Token: token,
+	}
+
+	if push.PushType == commons.NewMessagePushType {
+		msg.Data["text"] = push.Text
 	}
 
 	if !isItDataPush {

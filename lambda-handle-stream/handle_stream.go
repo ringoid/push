@@ -89,6 +89,13 @@ func sendLikeNotification(body []byte, lc *lambdacontext.LambdaContext) (error) 
 		NewMessageEnabled: event.NewMessageEnabled,
 		OppositeUserId:    event.OppositeUserId,
 		PushType:          commons.NewLikePushType,
+		Name:              event.Name,
+		Text:              event.Text,
+		Ts:                event.Ts,
+	}
+	push.Thumbnails = make([]string, 0)
+	for _, each := range event.Thumbnails {
+		push.Thumbnails = append(push.Thumbnails, each)
 	}
 	err = sendPushToSqs(push, lc)
 	return err
@@ -100,16 +107,23 @@ func sendMatchNotification(body []byte, lc *lambdacontext.LambdaContext) (error)
 		return err
 	}
 	push := commons.PushObject{
-		UserId:          event.UserId,
-		Sex:             event.Sex,
-		Locale:          event.Locale,
-		LastOnlineTime:  event.LastOnlineTime,
-		NewMatchCounter: 1,
+		UserId:            event.UserId,
+		Sex:               event.Sex,
+		Locale:            event.Locale,
+		LastOnlineTime:    event.LastOnlineTime,
+		NewMatchCounter:   1,
 		NewLikeEnabled:    event.NewLikeEnabled,
 		NewMatchEnabled:   event.NewMatchEnabled,
 		NewMessageEnabled: event.NewMessageEnabled,
 		OppositeUserId:    event.OppositeUserId,
-		PushType:        commons.NewMatchPushType,
+		PushType:          commons.NewMatchPushType,
+		Name:              event.Name,
+		Text:              event.Text,
+		Ts:                event.Ts,
+	}
+	push.Thumbnails = make([]string, 0)
+	for _, each := range event.Thumbnails {
+		push.Thumbnails = append(push.Thumbnails, each)
 	}
 	err = sendPushToSqs(push, lc)
 	return err
@@ -131,6 +145,13 @@ func sendMessageNotification(body []byte, lc *lambdacontext.LambdaContext) (erro
 		NewMessageEnabled: event.NewMessageEnabled,
 		OppositeUserId:    event.OppositeUserId,
 		PushType:          commons.NewMessagePushType,
+		Name:              event.Name,
+		Text:              event.Text,
+		Ts:                event.Ts,
+	}
+	push.Thumbnails = make([]string, 0)
+	for _, each := range event.Thumbnails {
+		push.Thumbnails = append(push.Thumbnails, each)
 	}
 	err = sendPushToSqs(push, lc)
 	return err
